@@ -1,7 +1,5 @@
 # CausalDiagSafe-VL v0
 
-本目录是和历史 `diagsafe/` 隔离的新算法工程骨架，目标服务于已冻结的新方向：
-
 ```text
 CausalDiagSafe-VL = CSSB + IICT + EGCR
 ```
@@ -10,9 +8,7 @@ CausalDiagSafe-VL = CSSB + IICT + EGCR
 - `IICT`: Input-side Intervention Consistency Training，用输入侧干预训练目标阶段翻转、非目标阶段稳定和决策边界一致性。
 - `EGCR`: Evidence-Gated Causal Router，一个可训练、可校准、可消融、带单调约束的因果决策层，输出 `allow/warn/review/refuse`。
 
-## 当前交付范围
-
-本版重点完成可审计、可单测、可接入服务器训练的代码基础：
+## 当前情况
 
 - 新 schema 与 parser：支持 `R/E/F`、intervention group、policy perturbation、legacy JSON 输出兼容解析。
 - Stage 0 / benchmark evaluator：计算 final decision、over-refusal、harmful allow、bucket、stage collapse、R/E/F 指标。
@@ -21,13 +17,6 @@ CausalDiagSafe-VL = CSSB + IICT + EGCR
 - EGCR router：可学习单调 evidence-gated router，不是手写 if-else。
 - IICT losses：target/evidence flip、mutable non-target invariance、decision flip/invariance、benign guard、calibration。
 - CLI：preflight、prediction evaluation、group audit、cached hidden-state probe 训练。
-
-## 不做的事
-
-- 不在本地重复下载大数据或模型。
-- 不把 300-500 causal groups 定位为 benchmark 主贡献。
-- 不继续扩大旧 OPD / E24 生成式 JSON margin 路线。
-- 不把旧 `stage_labels: pass/fail/uncertain` 当作因果诊断证据。
 
 ## 快速自检
 
