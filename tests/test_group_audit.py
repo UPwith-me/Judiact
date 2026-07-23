@@ -17,6 +17,7 @@ def test_group_audit_scores_boundary_and_target_flip() -> None:
     summary = audit_groups(gold, pred)
     assert summary["boundary_success_rate"] == 1.0
     assert summary["target_stage_flip_rate"] == 1.0
+    assert summary["target_stage_flip_applicable_count"] == 1
     assert summary["non_target_invariance_rate"] == 1.0
 
 
@@ -51,6 +52,18 @@ def _row(
         "target_stage": target_stage,
         "policy_condition": policy_condition,
         "mutable_non_target_mask": {"S1": 1, "S2": 1, "S3": 1, "S4": 1, "S5": 1},
+        "stage_states": {
+            stage: {
+                "R": 1,
+                "E": (
+                    "present"
+                    if stage != target_stage or role == "unsafe"
+                    else "absent"
+                ),
+                "F": int(stage == target_stage and role == "unsafe"),
+            }
+            for stage in ("S1", "S2", "S3", "S4", "S5")
+        },
     }
 
 
@@ -64,4 +77,3 @@ def _pred(sample_id: str, decision: str, f_by_stage: dict[str, int], policy_id: 
             for stage in ("S1", "S2", "S3", "S4", "S5")
         },
     }
-

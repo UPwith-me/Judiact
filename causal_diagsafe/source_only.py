@@ -107,9 +107,17 @@ def run_metadata_baseline(
         "eval_count": len(eval_records),
         "decision_metrics": decision_metrics(eval_records, predictions),
         "stage_collapse_metrics": stage_collapse_metrics(predictions),
+        "prediction_rows": [
+            {
+                "id": prediction.sample_id,
+                "final_decision": prediction.final_decision,
+                "policy_id": prediction.policy_id,
+                "stage_states": prediction.stage_states.to_dict(),
+            }
+            for prediction in predictions
+        ],
         "interpretation": (
             "If this metadata-only baseline approaches CSSB/EGCR performance, the method is likely "
             "using source/modality/policy shortcuts rather than grounded causal stage states."
         ),
     }
-

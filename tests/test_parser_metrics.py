@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from causal_diagsafe.metrics import decision_metrics, stage_collapse_metrics, stage_state_metrics
+from causal_diagsafe.metrics import (
+    decision_metrics,
+    normalize_records_and_predictions,
+    policy_metrics,
+    stage_collapse_metrics,
+    stage_state_metrics,
+)
 from causal_diagsafe.parser import parse_prediction
 from causal_diagsafe.schema import normalize_record
 
@@ -33,6 +39,13 @@ def test_parse_legacy_stage_labels_marked_legacy() -> None:
     assert pred.final_decision == "allow"
     assert pred.legacy_stage_labels
     assert pred.stage_states.f_vector() == (0, 0, 0, 0, 0)
+
+
+def test_parse_invalid_decision_records_semantic_error() -> None:
+    pred = parse_prediction('{"final_decision":"unsupported_value"}')
+    assert pred.valid_json
+    assert pred.final_decision == "review"
+    assert pred.parse_error == "invalid final_decision"
 
 
 def test_decision_and_stage_metrics() -> None:
@@ -86,3 +99,30 @@ def test_stage_state_metrics_binary_and_evidence() -> None:
     assert metrics["S1.F"]["accuracy"] == 1.0
     assert metrics["S1.E"]["accuracy"] == 1.0
 
+
+def test_policy_metrics_exact_match() -> None:
+    records = [
+        normalize_record({"id": "a", "final_decision": "allow", "policy_id": "P_BENIGN"}),
+        normalize_record({"id": "b", "final_decision": "refuse", "policy_id": "P_CYBER"}),
+    ]
+    predictions = [
+        parse_prediction({"id": "a", "final_decision": "allow", "policy_id": "P_BENIGN"}),
+        parse_prediction({"id": "b", "final_decision": "refuse", "policy_id": "P_OTHER"}),
+    ]
+    metrics = policy_metrics(records, predictions)
+    assert metrics["count"] == 2
+    assert metrics["accuracy"] == 0.5
+
+
+def test_keyed_predictions_are_aligned_by_id() -> None:
+    gold = [
+        {"id": "a", "final_decision": "allow"},
+        {"id": "b", "final_decision": "refuse"},
+    ]
+    predictions = [
+        {"id": "b", "final_decision": "refuse"},
+        {"id": "a", "final_decision": "allow"},
+    ]
+    records, aligned = normalize_records_and_predictions(gold, predictions)
+    assert [record.sample_id for record in records] == ["a", "b"]
+    assert [prediction.sample_id for prediction in aligned] == ["a", "b"]

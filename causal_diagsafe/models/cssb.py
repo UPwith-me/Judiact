@@ -20,7 +20,7 @@ class CSSBOutput:
     policy_id_logits: torch.Tensor | None = None
 
     def probabilities(self) -> dict[str, torch.Tensor]:
-        return {
+        probabilities = {
             "pR": torch.sigmoid(self.r_logits),
             "pE": torch.softmax(self.e_logits, dim=-1),
             "pF": torch.sigmoid(self.f_logits),
@@ -29,6 +29,9 @@ class CSSBOutput:
             "p_benign": torch.sigmoid(self.benign_logits).squeeze(-1),
             "p_decision": torch.softmax(self.decision_logits, dim=-1),
         }
+        if self.policy_id_logits is not None:
+            probabilities["p_policy_id"] = torch.softmax(self.policy_id_logits, dim=-1)
+        return probabilities
 
 
 class CSSBHeads(nn.Module):
@@ -79,6 +82,10 @@ class CSSBHeads(nn.Module):
             raise ValueError(f"stage_hidden must have shape [B,5,H], got {tuple(stage_hidden.shape)}")
         if decision_hidden.ndim != 2:
             raise ValueError("decision_hidden must have shape [B,H]")
+        if stage_hidden.shape[0] != decision_hidden.shape[0]:
+            raise ValueError("stage_hidden and decision_hidden must have the same batch size")
+        if stage_hidden.shape[2] != self.hidden_size or decision_hidden.shape[1] != self.hidden_size:
+            raise ValueError(f"hidden states must use hidden_size={self.hidden_size}")
         h3 = stage_hidden[:, 2, :]
         h4 = stage_hidden[:, 3, :]
         r_logits = self.r_head(stage_hidden).squeeze(-1)
@@ -114,4 +121,3 @@ def _make_head(
         nn.Dropout(dropout),
         nn.Linear(mid, out_size),
     )
-

@@ -5,6 +5,7 @@ from typing import Any
 
 def render_eval_markdown(summary: dict[str, Any]) -> str:
     decision = summary.get("decision_metrics", {})
+    policy = summary.get("policy_metrics", {})
     collapse = summary.get("stage_collapse_metrics", {})
     lines = [
         "# CausalDiagSafe-VL 评测报告",
@@ -19,6 +20,13 @@ def render_eval_markdown(summary: dict[str, Any]) -> str:
         f"- over_refusal: {_pct(decision.get('over_refusal_rate'))}",
         f"- json_valid_rate: {_pct(decision.get('json_valid_rate'))}",
         f"- legacy_stage_output_rate: {_pct(decision.get('legacy_stage_output_rate'))}",
+        "",
+        "## Policy Matching",
+        "",
+        f"- count: {policy.get('count', 0)}",
+        f"- accuracy: {_pct(policy.get('accuracy'))}",
+        f"- macro_f1: {_pct(policy.get('macro_f1'))}",
+        f"- unknown_prediction_rate: {_pct(policy.get('unknown_prediction_rate'))}",
         "",
         "## Stage Collapse",
         "",
@@ -65,9 +73,28 @@ def render_group_audit_markdown(summary: dict[str, Any]) -> str:
         f"- complete_group_count: {summary.get('complete_group_count', 0)}",
         f"- boundary_success_rate: {_pct(summary.get('boundary_success_rate'))}",
         f"- target_stage_flip_rate: {_pct(summary.get('target_stage_flip_rate'))}",
+        (
+            "- target_stage_flip_applicable_count: "
+            f"{summary.get('target_stage_flip_applicable_count', 0)}"
+        ),
         f"- non_target_invariance_rate: {_pct(summary.get('non_target_invariance_rate'))}",
-        f"- evidence_flip_rate: {_pct(summary.get('evidence_flip_rate'))}",
+        (
+            "- non_target_F_invariance_rate: "
+            f"{_pct(summary.get('non_target_F_invariance_rate'))}"
+        ),
+        (
+            "- target_evidence_change_rate: "
+            f"{_pct(summary.get('target_evidence_change_rate'))}"
+        ),
+        (
+            "- target_evidence_change_applicable_count: "
+            f"{summary.get('target_evidence_change_applicable_count', 0)}"
+        ),
         f"- policy_leakage_rate: {_pct(summary.get('policy_leakage_rate'))}",
+        (
+            "- policy_decision_overconfidence_rate: "
+            f"{_pct(summary.get('policy_decision_overconfidence_rate'))}"
+        ),
         "",
         "## Role 指标",
         "",
@@ -101,4 +128,3 @@ def _pct(value: Any) -> str:
         return f"{float(value) * 100:.2f}%"
     except (TypeError, ValueError):
         return "0.00%"
-

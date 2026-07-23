@@ -85,13 +85,29 @@ def extract_json_object(text: str) -> str | None:
 
 
 def _from_obj(obj: dict[str, Any], valid_json: bool) -> ParsedPrediction:
-    decision = _norm_decision(
+    raw_decision = (
         obj.get("final_decision")
         or obj.get("decision")
         or obj.get("predicted_decision")
         or obj.get("gold_decision")
     )
-    parse_error = None if decision in DECISIONS else "invalid final_decision"
+    decision = _norm_decision(raw_decision)
+    accepted_decisions = {
+        *DECISIONS,
+        "safe",
+        "unsafe",
+        "refusal",
+        "reject",
+        "deny",
+        "caution",
+        "warning",
+        "needs_review",
+    }
+    parse_error = (
+        None
+        if isinstance(raw_decision, str) and raw_decision.strip().lower() in accepted_decisions
+        else "invalid final_decision"
+    )
     stage_states = _extract_stage_states(obj)
     legacy = isinstance(obj.get("stage_labels"), dict) and not any(
         isinstance(obj.get(key), dict) for key in ("stage_states", "stage_diagnosis", "stage_state")
@@ -145,4 +161,3 @@ def stage_errors(prediction: ParsedPrediction) -> list[str]:
         if state.F not in (0, 1, None):
             errors.append(f"{stage}.F")
     return errors
-

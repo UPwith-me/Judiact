@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from ..io_utils import ensure_out_dir, read_jsonl, write_json, write_text
+from ..io_utils import ensure_out_dir, read_jsonl, write_json, write_jsonl, write_text
 from ..source_only import DEFAULT_METADATA_FIELDS, run_metadata_baseline
 
 
@@ -21,7 +21,9 @@ def main() -> None:
     fields = tuple(field.strip() for field in args.fields.split(",") if field.strip())
     summary = run_metadata_baseline(read_jsonl(args.train), read_jsonl(args.eval), fields=fields)
     out_dir = ensure_out_dir(args.out_dir)
+    prediction_rows = summary.pop("prediction_rows")
     write_json(out_dir / "source_only_baseline.json", summary)
+    write_jsonl(out_dir / "source_only_predictions.jsonl", prediction_rows)
     write_text(
         out_dir / "source_only_baseline.md",
         "# Source-only / Metadata-only Baseline\n\n"
@@ -38,4 +40,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

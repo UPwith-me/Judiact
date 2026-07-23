@@ -25,8 +25,8 @@ class StageState:
     def normalized(self) -> "StageState":
         r = _norm_binary(self.R)
         f = _norm_binary(self.F)
-        e = str(self.E or "uncertain").lower()
-        if e not in EVIDENCE_STATES:
+        e = None if self.E is None else str(self.E).lower()
+        if e is not None and e not in EVIDENCE_STATES:
             e = "uncertain"
         evidence = tuple(item for item in self.evidence if isinstance(item, dict))
         return StageState(R=r, E=e, F=f, evidence=evidence)
@@ -63,6 +63,9 @@ class DiagRecord:
     final_decision: str
     query: str = ""
     images: tuple[str, ...] = ()
+    response_candidate: str = ""
+    policy_text: str = ""
+    policy_text_supplied: bool = False
     source_dataset: str = "unknown"
     modality_scope: str = "unknown"
     harm_category: str = "unknown"
@@ -83,6 +86,9 @@ class DiagRecord:
             "final_decision": self.final_decision,
             "query": self.query,
             "images": list(self.images),
+            "response_candidate": self.response_candidate,
+            "policy_text": self.policy_text,
+            "policy_text_supplied": self.policy_text_supplied,
             "source_dataset": self.source_dataset,
             "modality_scope": self.modality_scope,
             "harm_category": self.harm_category,
@@ -101,44 +107,128 @@ class DiagRecord:
 def normalize_record(row: dict[str, Any]) -> DiagRecord:
     """Normalize historical and new DiagSafe rows into the new algorithm schema."""
 
-    stimulus = row.get("stimulus") if isinstance(row.get("stimulus"), dict) else {}
-    meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
-    pre = row.get("pre_annotation") if isinstance(row.get("pre_annotation"), dict) else {}
-    controls = row.get("controls") if isinstance(row.get("controls"), dict) else {}
-    group = row.get("group") if isinstance(row.get("group"), dict) else {}
-    policy_condition = row.get("policy_condition")
+    model_input = _as_dict(row.get("model_input"))
+    targets = _as_dict(row.get("targets"))
+    metadata = _as_dict(row.get("metadata"))
+    stimulus = _as_dict(row.get("stimulus"))
+    meta = _as_dict(row.get("meta"))
+    pre = _as_dict(row.get("pre_annotation"))
+    controls = _as_dict(row.get("controls"))
+    group = _as_dict(row.get("group"))
+    policy_condition = (
+        row.get("policy_condition")
+        or targets.get("policy_condition")
+        or metadata.get("policy_condition")
+        or group.get("policy_condition")
+    )
     if isinstance(policy_condition, dict):
         policy_condition = policy_condition.get("deck_type") or policy_condition.get("condition")
 
     final_decision = _norm_decision(
         row.get("expected_final_decision")
+        or targets.get("final_decision")
         or row.get("final_decision")
         or pre.get("gold_decision")
         or row.get("gold_decision")
     )
-    images = _norm_images(row.get("images", stimulus.get("images", [])))
+    images = _norm_images(
+        model_input.get("images")
+        if "images" in model_input
+        else row.get("images", stimulus.get("images", []))
+    )
     sample_id = str(row.get("sample_id") or row.get("id") or row.get("uid") or "")
-    target_stage = _norm_stage(row.get("target_stage") or meta.get("target_stage") or group.get("target_stage"))
+    policy_text_supplied = (
+        "policy_text" in model_input
+        or "policy_deck" in model_input
+        or bool(row.get("policy_text_supplied"))
+        or "policy_text" in row
+        or "policy_deck" in row
+    )
+    target_stage = _norm_stage(
+        targets.get("target_stage")
+        or row.get("target_stage")
+        or meta.get("target_stage")
+        or group.get("target_stage")
+    )
     mutable_mask = _norm_mutable_mask(
-        row.get("mutable_non_target_mask")
+        targets.get("stable_non_target_mask")
+        or row.get("stable_non_target_mask")
+        or group.get("stable_non_target_mask")
+        or row.get("mutable_non_target_mask")
         or group.get("mutable_non_target_mask")
         or row.get("non_target_stages")
     )
     return DiagRecord(
         sample_id=sample_id,
         final_decision=final_decision,
-        query=str(row.get("query") or stimulus.get("text_query") or row.get("text") or ""),
+        query=str(
+            model_input.get("query")
+            or row.get("query")
+            or stimulus.get("text_query")
+            or row.get("text")
+            or ""
+        ),
         images=images,
-        source_dataset=str(row.get("source_dataset") or meta.get("source_dataset") or "unknown"),
-        modality_scope=str(row.get("modality_scope") or meta.get("modality_scope") or _infer_modality(images)),
-        harm_category=str(row.get("harm_category") or meta.get("harm_category") or "unknown"),
-        attack_mechanism=str(row.get("attack_mechanism") or meta.get("attack_mechanism") or "unknown"),
+        response_candidate=str(
+            model_input.get("response_candidate")
+            or row.get("response_candidate")
+            or row.get("candidate_response")
+            or ""
+        ),
+        policy_text=_normalize_policy_text(
+            model_input.get("policy_text")
+            if "policy_text" in model_input
+            else (
+                model_input.get("policy_deck")
+                if "policy_deck" in model_input
+                else (
+                    row.get("policy_text")
+                    if "policy_text" in row
+                    else row.get("policy_deck")
+                )
+            )
+        ),
+        policy_text_supplied=policy_text_supplied,
+        source_dataset=str(
+            metadata.get("source_dataset")
+            or row.get("source_dataset")
+            or meta.get("source_dataset")
+            or "unknown"
+        ),
+        modality_scope=str(
+            row.get("modality_scope")
+            or metadata.get("modality_scope")
+            or meta.get("modality_scope")
+            or _infer_modality(images)
+        ),
+        harm_category=str(
+            row.get("harm_category")
+            or metadata.get("harm_category")
+            or meta.get("harm_category")
+            or "unknown"
+        ),
+        attack_mechanism=str(
+            row.get("attack_mechanism")
+            or metadata.get("attack_mechanism")
+            or meta.get("attack_mechanism")
+            or "unknown"
+        ),
         target_stage=target_stage,
-        group_id=str(row.get("group_id") or group.get("group_id") or ""),
-        role=_norm_role(row.get("role") or group.get("role")),
-        changed_factor=_norm_changed_factor(row.get("changed_factor") or group.get("changed_factor")),
+        group_id=str(
+            row.get("group_id")
+            or metadata.get("group_id")
+            or group.get("group_id")
+            or ""
+        ),
+        role=_norm_role(targets.get("role") or row.get("role") or group.get("role")),
+        changed_factor=_norm_changed_factor(
+            targets.get("changed_factor")
+            or row.get("changed_factor")
+            or group.get("changed_factor")
+        ),
         policy_id=str(
             row.get("expected_policy_id")
+            or targets.get("policy_id")
             or row.get("policy_id")
             or pre.get("policy_id")
             or "unknown"
@@ -188,8 +278,8 @@ def _extract_stage_states(row: dict[str, Any]) -> StageStateBundle:
             ).normalized()
     if isinstance(row.get("failure_or_risk_labels"), dict):
         risk = row["failure_or_risk_labels"]
-        req = row.get("requirement_labels") if isinstance(row.get("requirement_labels"), dict) else {}
-        ev = row.get("evidence_labels") if isinstance(row.get("evidence_labels"), dict) else {}
+        req = _as_dict(row.get("requirement_labels"))
+        ev = _as_dict(row.get("evidence_labels"))
         return StageStateBundle(
             {
                 stage: StageState(
@@ -253,12 +343,34 @@ def _norm_role(value: Any) -> str:
 
 def _norm_changed_factor(value: Any) -> str:
     factor = str(value or "unknown").strip().lower()
+    aliases = {
+        "visual_perception": "visual_evidence",
+        "visual_grounding": "visual_evidence",
+        "binding": "image_text_binding",
+    }
+    factor = aliases.get(factor, factor)
     return factor if factor in CHANGED_FACTORS else "unknown"
 
 
 def _norm_policy_condition(value: Any) -> str:
     condition = str(value or "unknown").strip().lower()
     return condition if condition in POLICY_CONDITIONS else "unknown"
+
+
+def _normalize_policy_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple)):
+        return "\n".join(str(item).strip() for item in value if str(item).strip())
+    if isinstance(value, dict):
+        return "\n".join(
+            f"{key}: {item}"
+            for key, item in value.items()
+            if str(item).strip()
+        )
+    return str(value).strip()
 
 
 def _norm_images(value: Any) -> tuple[str, ...]:
@@ -317,3 +429,6 @@ def _norm_mutable_mask(value: Any) -> dict[str, int]:
         return {stage: int(stage in stable) for stage in STAGES}
     return {stage: 1 for stage in STAGES}
 
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
