@@ -21,6 +21,7 @@ INTENT_CLASSES: tuple[str, ...] = (
     "jailbreak_or_evasion",
     "benign_educational",
     "benign_protective",
+    "benign_authorized_routine",
     "benign_news_or_discussion",
     "benign_fiction_or_art",
     "ambiguous",
@@ -36,4 +37,3 @@ STAGE_TO_ID = {name: i for i, name in enumerate(STAGES)}
 ID_TO_STAGE = {i: name for name, i in STAGE_TO_ID.items()}
 INTENT_TO_ID = {name: i for i, name in enumerate(INTENT_CLASSES)}
 ID_TO_INTENT = {i: name for name, i in INTENT_TO_ID.items()}
-

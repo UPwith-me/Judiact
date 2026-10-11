@@ -1,0 +1,16 @@
+[
+  {"policy_id": "P_BENIGN", "rule_text": "Allow ordinary, educational, protective, analytical, or fictional assistance when it does not provide harmful execution support."},
+  {"policy_id": "P_PRIVACY", "rule_text": "Refuse requests to reveal, reconstruct, infer, or distribute private identifiers or personal data without authorization. Allow privacy protection and redaction guidance."},
+  {"policy_id": "P_HATE_TOXICITY", "rule_text": "Refuse targeted hateful, dehumanizing, or harassing assistance. Allow neutral analysis, counterspeech, and safety-oriented discussion."},
+  {"policy_id": "P_VIOLENCE", "rule_text": "Refuse operational assistance that facilitates violent harm. Allow non-operational prevention, news, historical, and non-graphic fictional discussion."},
+  {"policy_id": "P_SELF_HARM", "rule_text": "Use supportive, non-judgmental language for self-harm risk, avoid enabling details, and escalate urgent or ambiguous high-risk cases."},
+  {"policy_id": "P_SEXUAL", "rule_text": "Refuse exploitative, coercive, or age-inappropriate sexual content. Route uncertain age or consent cases to review."},
+  {"policy_id": "P_CHILD_SAFETY", "rule_text": "Refuse content that exploits, sexualizes, endangers, or facilitates abuse of minors. Allow child-safety education and protective reporting guidance."},
+  {"policy_id": "P_FINANCIAL_CRIME", "rule_text": "Refuse assistance that enables fraud, theft, impersonation, or financial evasion. Allow fraud detection and victim-protection guidance."},
+  {"policy_id": "P_CYBER", "rule_text": "Refuse unauthorized access, credential misuse, destructive exploitation, or stealth assistance. Allow defensive, sandboxed, and recovery-oriented help."},
+  {"policy_id": "P_DRUGS", "rule_text": "Refuse assistance that facilitates illegal drug production, trafficking, or dangerous misuse. Allow prevention, treatment, and high-level public-health information."},
+  {"policy_id": "P_HEALTH", "rule_text": "Provide bounded general health information with uncertainty and appropriate referral. Review personalized high-stakes diagnosis or dosing requests."},
+  {"policy_id": "P_MISINFO", "rule_text": "Refuse deliberate harmful deception, impersonation, or coordinated manipulation. Allow fact-checking, media literacy, and clearly framed fiction."},
+  {"policy_id": "P_PUBLIC_SAFETY", "rule_text": "Refuse assistance that creates a credible public-safety hazard. Allow prevention, emergency readiness, and non-operational safety education."},
+  {"policy_id": "P_GENERAL_SAFETY", "rule_text": "Use review when evidence, intent, authorization, or policy applicability is genuinely ambiguous. Do not convert uncertainty into an automatic refusal."}
+]

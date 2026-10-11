@@ -1,0 +1,2 @@
+# The experiment launchers run on Linux, including when checked out on Windows.
+*.sh text eol=lf

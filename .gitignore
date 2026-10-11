@@ -6,9 +6,46 @@ __pycache__/
 
 .venv/
 venv/
+.codex_tmp/
 
-artifacts/
-exports/
-reports/
-outputs/
+# Data, private annotation operations, third-party checkouts, and run outputs.
+/raw/
+/work/
+/annotation_ops/
+/artifacts/
+/exports/
+/reviews/
+/reports/
+/outputs/
+/runs/
+/releases/
+/media/
+/checkpoints/
+/weights/
+*.jsonl
+*.parquet
+*.arrow
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+*.tar
+*.tar.gz
+*.zip
 *.log
+
+# Local credentials must stay outside the shared repository.
+.env
+.env.*
+!.env.example
+/.ssh/
+/secrets/
+/private/
+credentials*.json
+*token*.txt
+*.pem
+*.key
+id_rsa*
+id_ed25519*
