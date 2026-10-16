@@ -1,0 +1,4 @@
+# Shared training stack plus the V6 evidence decoder.
+# CUDA-specific torch/torchvision wheels are selected separately.
+-r train-v3.txt
+xgrammar==0.2.8

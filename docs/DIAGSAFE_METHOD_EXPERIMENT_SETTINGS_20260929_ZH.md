@@ -1,6 +1,6 @@
-# DiagSafe-VL 当前方法与训练设置
+# DiagSafe-VL v3 方法与训练设置（历史）
 
-本文按 2026-10-12 的 v3 实现整理。文件名保留以便现有链接继续使用，内容对应当前语义判断模型与联合三轮训练。方法定义见 [v3 方法](DIAGSAFE_V3_METHOD_EXECUTION_PLAN_20261008_ZH.md)，数据组成见 [数据说明](DATA_OVERVIEW_ZH.md)，字段语义见 [数据契约](../data_contract/v1/README_ZH.md)。
+本文保留 2026-10-12 的 v3 实验设置，文件名保留以便历史链接继续使用。**当前 v6 的方法、数据入口和运行命令见 [v6 方法与运行说明](DIAGSAFE_V6_GUIDE_ZH.md)**；下文参数与路径属于 v3，不能直接当作 v6 配置。历史方法定义见 [v3 方法](DIAGSAFE_V3_METHOD_EXECUTION_PLAN_20261008_ZH.md)。
 
 ## 1. 学习任务
 
