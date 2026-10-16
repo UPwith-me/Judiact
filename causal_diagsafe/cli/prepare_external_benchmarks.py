@@ -20,7 +20,8 @@ def main():
     config, deck = json.loads(Path(args.config).read_text()), json.loads(Path(args.deck).read_text())
     tasks = args.tasks or list(dict.fromkeys(config["primary_tasks"] + config["extended_tasks"]))
     output = Path(args.output)
-    report = {}
+    inventory_file = output / "inventory.json"
+    report = json.loads(inventory_file.read_text()) if inventory_file.exists() else {}
     new_sources = {"siuo": "siuo", "beavertails_v_response": "beavertails_v", "mm_safetybench": "mm_safetybench",
                    "jailbreakv": "jailbreakv", "sorrybench": "sorrybench", "spa_vl_eval_prompt": "guardreasoner_test",
                    "spa_vl_eval_response": "guardreasoner_test"}
@@ -44,7 +45,7 @@ def main():
         except Exception as exc:
             report[task] = {"status": "unavailable", "error_type": type(exc).__name__, "error": str(exc)[:1500]}
             print(task, json.dumps(report[task]), flush=True)
-        write_json(output / "inventory.json", report)
+        write_json(inventory_file, report)
 
 
 if __name__ == "__main__":

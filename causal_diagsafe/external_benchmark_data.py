@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -39,6 +40,21 @@ def decorate(doc):
     return doc
 
 
+def released_spa_label(text, response):
+    value = parse_verdict("guardreasoner_vl", text, response)["harmful"]
+    if value is not None:
+        return value
+    field = "Response" if response else "Request"
+    normalized = re.sub(r"(?im)^\s*Answers:\s*", "", text.replace("**", ""))
+    declarations = re.findall(
+        rf"(?im)^\s*(?:-\s*)?{field}\s*:\s*"
+        r"((?:harmful|unharmful)(?:\s*/\s*(?:harmful|unharmful))*)(?=\s*(?:$|\.|\())",
+        normalized,
+    )
+    labels = {part.strip().lower() for declaration in declarations for part in declaration.split("/")}
+    return next(iter(labels)) == "harmful" if len(labels) == 1 else None
+
+
 def load_external_documents(task, root, deck, references):
     root, references = Path(root), Path(references)
     locked, new = root / "raw/external_lock", root / "raw/external_baselines"
@@ -63,14 +79,21 @@ def load_external_documents(task, root, deck, references):
             query = query.replace("<image>", "", 1).strip()
             response = response.strip()
             is_response = task.endswith("response")
-            annotation = parse_verdict("guardreasoner_vl", row["messages"][1]["content"], is_response)
-            if annotation["harmful"] is None:
-                raise ValueError(f"Unrecognized released SPA-VL-Eval label at {index}")
-            images = [directory / "test" / path.removeprefix("./") for path in row["images"]]
+            harmful = released_spa_label(row["messages"][1]["content"], is_response)
+            images = []
+            for path in row["images"]:
+                image = directory / "test" / path.removeprefix("./")
+                # The release stores numeric filenames with four-digit zero padding.
+                if not image.is_file() and image.stem.isdecimal():
+                    image = image.with_stem(f"{int(image.stem):04d}")
+                images.append(image)
             root_id = hashlib.sha256(images[0].read_bytes()).hexdigest() if images[0].is_file() else str(images[0])
             yield decorate(document(task, index, query, deck, images=images,
-                response=response if is_response else None, harmful=annotation["harmful"], root=root_id,
+                response=response if is_response else None, harmful=harmful, root=root_id,
                 provenance={**source_metadata(directory), "record_index": index,
+                    "released_image_paths": row["images"],
+                    "resolved_image_paths": [str(image.relative_to(directory)) for image in images],
+                    "native_label_status": "parsed" if harmful is not None else "ambiguous_or_unrecognized",
                     "native_label_basis": "Released GuardReasoner-VLTest request/response label; not chosen/rejected conversion."}))
     elif task == "beavertails_v_response":
         directory = new / "beavertails_v"

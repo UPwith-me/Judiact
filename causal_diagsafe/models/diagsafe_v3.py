@@ -26,6 +26,8 @@ def load_model_v3(path, adapter=None, training=False):
             task_type=TaskType.CAUSAL_LM, r=16, lora_alpha=32, lora_dropout=.05,
             bias="none", init_lora_weights=True,
             target_modules=r"model\.language_model\.layers\.\d+\.self_attn\.(q_proj|k_proj|v_proj|o_proj)"))
+    if not training:
+        model.requires_grad_(False)
     if training:
         model.enable_input_require_grads()
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})

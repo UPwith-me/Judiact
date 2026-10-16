@@ -12,6 +12,8 @@ from .constants import (
     STAGES,
 )
 
+RECORD_ROLES: tuple[str, ...] = (*GROUP_ROLES, "control")
+
 
 @dataclass(frozen=True)
 class StageState:
@@ -109,6 +111,8 @@ def normalize_record(row: dict[str, Any]) -> DiagRecord:
 
     model_input = _as_dict(row.get("model_input"))
     targets = _as_dict(row.get("targets"))
+    intervention = _as_dict(row.get("intervention"))
+    source = _as_dict(row.get("source"))
     metadata = _as_dict(row.get("metadata"))
     stimulus = _as_dict(row.get("stimulus"))
     meta = _as_dict(row.get("meta"))
@@ -120,6 +124,7 @@ def normalize_record(row: dict[str, Any]) -> DiagRecord:
         or targets.get("policy_condition")
         or metadata.get("policy_condition")
         or group.get("policy_condition")
+        or _policy_condition_from_intervention(intervention.get("type"))
     )
     if isinstance(policy_condition, dict):
         policy_condition = policy_condition.get("deck_type") or policy_condition.get("condition")
@@ -134,7 +139,7 @@ def normalize_record(row: dict[str, Any]) -> DiagRecord:
     images = _norm_images(
         model_input.get("images")
         if "images" in model_input
-        else row.get("images", stimulus.get("images", []))
+        else row.get("images", row.get("media", stimulus.get("images", [])))
     )
     sample_id = str(row.get("sample_id") or row.get("id") or row.get("uid") or "")
     policy_text_supplied = (
@@ -191,18 +196,21 @@ def normalize_record(row: dict[str, Any]) -> DiagRecord:
         policy_text_supplied=policy_text_supplied,
         source_dataset=str(
             metadata.get("source_dataset")
+            or source.get("dataset")
             or row.get("source_dataset")
             or meta.get("source_dataset")
             or "unknown"
         ),
         modality_scope=str(
             row.get("modality_scope")
+            or row.get("modality")
             or metadata.get("modality_scope")
             or meta.get("modality_scope")
             or _infer_modality(images)
         ),
         harm_category=str(
             row.get("harm_category")
+            or _first_harm_category(targets.get("harm_categories"))
             or metadata.get("harm_category")
             or meta.get("harm_category")
             or "unknown"
@@ -223,6 +231,7 @@ def normalize_record(row: dict[str, Any]) -> DiagRecord:
         role=_norm_role(targets.get("role") or row.get("role") or group.get("role")),
         changed_factor=_norm_changed_factor(
             targets.get("changed_factor")
+            or intervention.get("changed_factor")
             or row.get("changed_factor")
             or group.get("changed_factor")
         ),
@@ -249,7 +258,7 @@ def validate_record(row: dict[str, Any]) -> list[str]:
         errors.append(f"final_decision:invalid:{record.final_decision}")
     if record.target_stage != "unknown" and record.target_stage not in STAGES:
         errors.append(f"target_stage:invalid:{record.target_stage}")
-    if record.role and record.role not in GROUP_ROLES:
+    if record.role and record.role not in RECORD_ROLES:
         errors.append(f"role:invalid:{record.role}")
     if record.changed_factor not in CHANGED_FACTORS:
         errors.append(f"changed_factor:invalid:{record.changed_factor}")
@@ -267,6 +276,14 @@ def validate_record(row: dict[str, Any]) -> list[str]:
 
 
 def _extract_stage_states(row: dict[str, Any]) -> StageStateBundle:
+    target_states = _as_dict(row.get("targets")).get("stage_states")
+    if isinstance(target_states, dict):
+        return StageStateBundle(
+            {
+                stage: _stage_state_from_any(target_states.get(stage))
+                for stage in STAGES
+            }
+        ).normalized()
     for key in ("stage_states", "stage_diagnosis", "stage_state"):
         value = row.get(key)
         if isinstance(value, dict):
@@ -338,7 +355,7 @@ def _norm_stage(value: Any) -> str:
 
 def _norm_role(value: Any) -> str:
     role = str(value or "").strip().lower()
-    return role if role in GROUP_ROLES else ""
+    return role if role in RECORD_ROLES else ""
 
 
 def _norm_changed_factor(value: Any) -> str:
@@ -357,13 +374,32 @@ def _norm_policy_condition(value: Any) -> str:
     return condition if condition in POLICY_CONDITIONS else "unknown"
 
 
+def _policy_condition_from_intervention(value: Any) -> str:
+    intervention = str(value or "").strip().lower()
+    return {
+        "wrong_policy": "wrong",
+        "missing_policy": "missing",
+        "decoy_policy": "decoy",
+    }.get(intervention, "")
+
+
 def _normalize_policy_text(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
         return value.strip()
     if isinstance(value, (list, tuple)):
-        return "\n".join(str(item).strip() for item in value if str(item).strip())
+        lines = []
+        for item in value:
+            if isinstance(item, dict):
+                policy_id = str(item.get("policy_id", "")).strip()
+                rule_text = str(item.get("rule_text", "")).strip()
+                rendered = f"{policy_id}: {rule_text}" if policy_id else rule_text
+            else:
+                rendered = str(item).strip()
+            if rendered:
+                lines.append(rendered)
+        return "\n".join(lines)
     if isinstance(value, dict):
         return "\n".join(
             f"{key}: {item}"
@@ -377,8 +413,27 @@ def _norm_images(value: Any) -> tuple[str, ...]:
     if isinstance(value, str):
         return (value,) if value else ()
     if isinstance(value, list):
-        return tuple(str(item) for item in value if str(item or ""))
+        images = []
+        for item in value:
+            if isinstance(item, dict):
+                rendered = str(
+                    item.get("uri")
+                    or item.get("path")
+                    or item.get("image")
+                    or ""
+                ).strip()
+            else:
+                rendered = str(item or "").strip()
+            if rendered:
+                images.append(rendered)
+        return tuple(images)
     return ()
+
+
+def _first_harm_category(value: Any) -> str:
+    if isinstance(value, list):
+        return str(next((item for item in value if str(item).strip()), ""))
+    return str(value or "")
 
 
 def _infer_modality(images: tuple[str, ...]) -> str:

@@ -32,6 +32,9 @@ def main():
     output = Path(args.output)
     previous = output / "summary.json"
     reports = json.loads(previous.read_text()) if previous.exists() else {}
+    for branch in reports.values():
+        for task in config.get("deferred_tasks", {}):
+            branch.pop(task, None)
     for model in config["models"] + config.get("method_models", []):
         for protocol in model["protocols"]:
             key = f"{model['name']}/{protocol}"

@@ -4,6 +4,7 @@ import ast
 import importlib.util
 import os
 import time
+from functools import partial
 from pathlib import Path
 
 from .external_guard_formats import NATIVE_MODERATION, audit_document
@@ -231,6 +232,9 @@ class HarmBenchJudge:
                 spec = importlib.util.spec_from_file_location("harmbench_official_eval_utils", self.references / "eval_utils.py")
                 self.hash_utils = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(self.hash_utils)
+                from datasketch import MinHash
+                # Released copyright references use the pre-2.0 permutation scheme.
+                self.hash_utils.MinHash = partial(MinHash, scheme="legacy")
             behavior = {"BehaviorID": identifier.split(":", 1)[1], "Behavior": provenance["behavior"],
                         "ContextString": provenance["context"], "Tags": provenance["tags"]}
             previous = Path.cwd()

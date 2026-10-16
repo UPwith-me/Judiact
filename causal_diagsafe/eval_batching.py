@@ -76,6 +76,11 @@ class EvalBatcher:
                     values = forward([item[2] for item in selected])
                 except (torch.cuda.OutOfMemoryError, FileNotFoundError, UnidentifiedImageError) as exc:
                     failure = (type(exc), str(exc))
+                except RuntimeError as exc:
+                    # Retry the observed Qwen CUDA indexing overflow without changing any input.
+                    if str(exc) != "numel: integer multiplication overflow" or len(selected) == 1:
+                        raise
+                    failure = (type(exc), str(exc))
                 if failure is not None:
                     # Release the failed forward's traceback before freeing its tensors.
                     for device in self.devices:

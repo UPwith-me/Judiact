@@ -40,6 +40,9 @@ def evidence_metrics(rows, predictions):
             "text_character_F1": {key: rate(values) for key, values in text.items()},
             "image_best_match_IoU_per_gold_region": {key: rate(values) for key, values in images.items()},
             "parse_and_location_valid": rate(parsing), "present_without_gold_localization": dict(missing),
+            "unestablished_output_blocks": sum(item.get("localization_status") == "unestablished"
+                for row in rows for item in predictions[row["sample_id"]].get("evidence", [])),
+            "parsing_note": "Syntactically valid empty/null output is not successful evidence localization; see character F1 and region IoU.",
             "unannotated_field_false_positives": "not scored: missing annotations are not negative gold"}
 
 

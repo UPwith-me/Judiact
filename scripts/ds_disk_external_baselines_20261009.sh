@@ -68,6 +68,8 @@ wait_weight_download() {
 
 guard() {
     local model="$1" gpu="$2" data="$3" out="$4" phase="$5" protocol="$6" interpreter="$PY"
+    local log_phase="$phase"
+    if [ "${COMPLETION_ONLY:-}" = spa ]; then log_phase=spa_completion; fi
     local tasks=() adapter=()
     mapfile -t tasks < <("$PY" -c 'import json,sys; from pathlib import Path; c=json.load(open(sys.argv[1])); tasks=c[sys.argv[2]+"_tasks"]; allowed=set(c["system_tasks"]); p=Path(sys.argv[4])/sys.argv[5]/sys.argv[6]/"summary.json"; done=json.load(p.open()) if p.exists() else {}; print("\n".join(t for t in tasks if (sys.argv[3]!="post" or t in allowed) and done.get(t,{}).get("status")!="evaluated"))' "$CONFIG" "$phase" "$(basename "$out")" "$out" "$model" "$protocol")
     if [ "${#tasks[@]}" -eq 0 ]; then return; fi
@@ -84,7 +86,7 @@ guard() {
     CUDA_VISIBLE_DEVICES="$gpu" "$interpreter" -m causal_diagsafe.cli.evaluate_external_baselines \
         --root "$ROOT" --config "$CONFIG" --model "$model" --protocol "$protocol" "${adapter[@]}" \
         --data "$data" --output "$out/$model/$protocol" --tasks "${tasks[@]}" \
-        > "$RUN/logs/${model}_${protocol}_${phase}_$(basename "$out").log" 2>&1
+        > "$RUN/logs/${model}_${protocol}_${log_phase}_$(basename "$out").log" 2>&1
     local exit_status=$?
     printf '%s %s %s %s exit=%s\n' "$model" "$protocol" "$phase" "$(basename "$out")" "$exit_status"
 }
@@ -168,6 +170,12 @@ system_phase() {
 }
 
 # Small full suites first; large attack/over-refusal extensions follow without test tuning.
+if [ "${1:-all}" = spa ]; then
+    COMPLETION_ONLY=spa
+    native_phase primary "$DATA" "$RUN/native"
+    printf 'SPA-VL request and response completion finished.\n'
+    exit
+fi
 if [ "${1:-all}" = all ]; then
     native_phase primary "$DATA" "$RUN/native"
     system_phase primary
