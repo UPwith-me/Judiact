@@ -4,46 +4,42 @@
 
 DiagSafe-VL 研究这类交互中的可诊断安全审核。系统在回答前判断请求应怎样处理，在回答后检查候选内容能否发布，并定位支持判断的视觉、文字和规则证据。我们希望模型在输入因素发生变化时，能够识别哪些判断需要改变、哪些仍然成立，同时保留正常请求的有效帮助。
 
-当前方法版本为 **v6**，数据契约仍为 **v1**。训练读取冻结发布 `visual_refusal_fill_20261015`。本仓库提供正式方法实现和运行说明；完整数据、媒体、模型权重、内部复核记录和机制探索产物单独管理。方法实现已同步，不据此宣称最终模型效果已经验证。
+当前方法版本为 **v7**，数据契约仍为 **v1**。训练读取冻结发布 `visual_refusal_fill_20261015`。本仓库提供主方法、训练、推理、自然 dev 评测和运行说明；数据、媒体、权重、内部复核记录和诊断实验单独管理。V7 采用弱监督 SFT 后接潜变量学习，完整效果仍在验证中。
 
 ## 阅读入口
 
 | 内容 | 入口 |
 | --- | --- |
-| v6 的信息流、训练目标与限制 | [当前方法](docs/DIAGSAFE_V6_GUIDE_ZH.md#method) |
+| v7 的信息流、训练目标与限制 | [当前方法](docs/DIAGSAFE_V7_GUIDE_ZH.md#method) |
 | 数据数量、监督范围与文件布局 | [当前数据](docs/DATA_OVERVIEW_ZH.md) |
 | Sample、关系边与 S2 四角 | [数据契约 v1](data_contract/v1/README_ZH.md) |
-| 环境与四卡三轮训练 | [训练说明](docs/DIAGSAFE_V6_GUIDE_ZH.md#training) |
-| 完整诊断推理、dev 与公开评测 | [推理与评测](docs/DIAGSAFE_V6_GUIDE_ZH.md#evaluation) |
-| 正式代码与共享依赖 | [实现索引](docs/DIAGSAFE_V6_GUIDE_ZH.md#implementation) |
+| 环境、自动过程参考与四卡训练 | [训练说明](docs/DIAGSAFE_V7_GUIDE_ZH.md#training) |
+| 自主推理、自然 dev 与指标口径 | [推理与评测](docs/DIAGSAFE_V7_GUIDE_ZH.md#evaluation) |
+| 正式代码与共享依赖 | [实现索引](docs/DIAGSAFE_V7_GUIDE_ZH.md#implementation) |
 
 ## 方法流程
 
-v6 使用完整 Qwen3-VL-4B-Instruct、一份语言侧 LoRA 和原有 LM head。模型沿固定审核顺序生成证据、读取阶段与动作；原始输入始终可见。分类答案对外保存，在后续模型上下文中的位置统一替换为固定占位符，避免前一个类别文本直接成为后一个判断的依据。
+v7 使用 Qwen3-VL-4B-Instruct、一份语言侧 LoRA 和原有 LM head。模型先记录有来源归属的事实 W，再结合当前规则形成诊断与规则记录 D，最后读取 D 作出处置。每个节点重新编码所声明的输入；最终动作不再读取原始图片、原文、前一调用的 KV 或隐藏状态，也不直接复制 `policy_action`。
 
 ```mermaid
 flowchart TB
-    subgraph USE["实际审核"]
-        X["当前请求、真实图片与规则"] --> PRE["v6 请求审核<br/>自主证据与 S1-S4、意图、policy、动作"]
-        PRE -- "allow / warn" --> A["独立回答模型"]
-        PRE -- "review / refuse" --> HOLD["澄清、人工处理或拒绝请求"]
-        X -. "原始请求上下文" .-> A
-        A --> C["真实候选回答"]
-        C --> POST["同一 v6 审核模型<br/>S5 证据与回答发布动作"]
-        X -- "原始请求上下文" --> POST
-        POST -- "allow" --> OUT["原样发布"]
-        POST -- "warn / review / refuse" --> REWORK["修改后再审、复核或拒绝发布"]
-    end
-
-    classDef model fill:#e6f1fa,stroke:#42718d,color:#153a50;
-    classDef output fill:#fff2d6,stroke:#98772f,color:#5d4719;
-    class PRE,POST model;
-    class OUT,HOLD,REWORK output;
+    X["真实图片、query、实际 OCR、候选回答"] --> W["来源事实 W<br/>行为、对象、条件和来源引用"]
+    W --> L["规则链接 L<br/>前提、例外和未明确条件"]
+    P["当前实际 policy deck"] --> L
+    W --> S["阶段诊断<br/>请求 S1-S4、意图和 policy<br/>或回答 S5"]
+    P --> S
+    L --> S
+    W --> D["诊断与规则记录 D"]
+    L --> D
+    S --> D
+    D --> A["请求动作 / 回答可发布性<br/>allow、warn、review、refuse"]
+    A --> B["安全回答行为"]
+    D --> B
 ```
 
-训练时，每个成员在每轮首次使用时由当前模型生成证据，并在该轮内重用。分类与关系损失读取这些自主证据；人工证据通过单独前向监督定位，不把 gold 证据前缀提供给分类损失。已核实关系采用固定标签计数下的组内条件匹配，保留单条监督来学习绝对边界。
+已有 R/E/F、意图、policy、动作、行为和定位构成观测监督。W 的事实表达与 L 的规则关联作为潜变量；训练期 32B 教师生成弱过程参考，不接收最终动作、阶段 gold 或 gold 定位，也不替换原标签。细粒度证据定位继续输出与监督，但动作之后的定位展示不被宣称为动作的因果依据。
 
-从公开主干连续训练 **3 个完整 epoch**，optimizer 和 scheduler 不按轮重启。每轮用完整自然 dev 选择 checkpoint；中间快照只用于恢复。具体目标、类别测度和选择口径见 [v6 方法与运行说明](docs/DIAGSAFE_V6_GUIDE_ZH.md)。
+从公开主干开始，先训练 **2 个完整 SFT epoch**，再接续 **2 个完整潜变量 epoch**。第二阶段每个成员抽取两份学生候选，并将可用的固定教师参考单独计入；根据已有观测计算后验，更新事实生成与判断过程。两阶段各自保持连续 optimizer/scheduler，每个完整 epoch 保存并运行固定自然 dev。具体公式、采样概率、关系项及局限见 [v7 方法与运行说明](docs/DIAGSAFE_V7_GUIDE_ZH.md)。
 
 ## 阶段与数据契约
 
@@ -63,7 +59,7 @@ R 表示正确审核是否需要该阶段能力，E 表示当前可见证据状�
 
 ## 当前数据
 
-以下为 v6 使用的冻结 train 清单，按 2026-10-16 的方法记录整理。带图成员数与独立视觉情境数分别解释。
+以下为 v7 继续使用的冻结 train 清单。带图成员数与独立视觉情境数分别解释；自动生成的 W/L 参考不增加根情境数。
 
 | 数据对象 | 数量 |
 | --- | --- |
@@ -73,7 +69,6 @@ R 表示正确审核是否需要该阶段能力，E 表示当前可见证据状�
 | S5 完全相同可见请求上下文 | 2042 |
 | 原生辅助来源根 | 36188，提供 59748 个监督项 |
 | 纳入训练的关系边 | 2784 |
-| 关系实验对象 / 根或上下文簇 | 1434 / 1012 |
 | S2 完整四角索引 | 317：222 个非零、67 个零交互对照、28 个含不确定角 |
 | 自然 dev | 请求 299 条，回答审核 200 条 |
 
@@ -84,18 +79,19 @@ R 表示正确审核是否需要该阶段能力，E 表示当前可见证据状�
 | 内容 | 入口 |
 | --- | --- |
 | 完整 Qwen 与 LoRA | [diagsafe_v3.py](causal_diagsafe/models/diagsafe_v3.py) |
-| v6 协议与字段上下文 | [audit_v6.py](causal_diagsafe/audit_v6.py)、[v6_sequence.py](causal_diagsafe/training/v6_sequence.py) |
-| 紧凑 JSON 证据解码 | [audit_constraints.py](causal_diagsafe/audit_constraints.py) |
-| 分类、证据与关系目标 | [v6_trainer.py](causal_diagsafe/training/v6_trainer.py)、[v5_matching.py](causal_diagsafe/training/v5_matching.py) |
-| 根权重下的类别测度 | [v6_supervision.py](causal_diagsafe/training/v6_supervision.py) |
-| 多轮训练与四卡取证 | [v6_formal.py](causal_diagsafe/training/v6_formal.py)、[train_v6.py](causal_diagsafe/cli/train_v6.py) |
-| 正式四卡启动脚本 | [ds_disk_grounded_v6.sh](scripts/ds_disk_grounded_v6.sh) |
-| 推理与诊断输出 | [inference_v6.py](causal_diagsafe/inference_v6.py)、[infer_v4.py](causal_diagsafe/cli/infer_v4.py) |
-| dev / 公开 benchmark | [evaluate_v4.py](causal_diagsafe/cli/evaluate_v4.py)、[evaluate_public_v4.py](causal_diagsafe/cli/evaluate_public_v4.py) |
-| 训练与 dev 依赖 | [train-v6.txt](requirements/train-v6.txt) |
+| 来源、规则、诊断与动作接口 | [audit_v7.py](causal_diagsafe/audit_v7.py) |
+| 自动过程参考 | [build_v7_latent_bank.py](causal_diagsafe/cli/build_v7_latent_bank.py) |
+| 现有标签、根权重与候选视图 | [v7_latent_data.py](causal_diagsafe/training/v7_latent_data.py) |
+| 后验权重与潜变量梯度 | [v7_latent_objective.py](causal_diagsafe/training/v7_latent_objective.py) |
+| 序列概率、XGrammar 与真实采样概率 | [v7_sequence.py](causal_diagsafe/training/v7_sequence.py) |
+| 两阶段训练与组内关系 | [v7_latent_trainer.py](causal_diagsafe/training/v7_latent_trainer.py)、[train_v7_latent.py](causal_diagsafe/cli/train_v7_latent.py) |
+| 正式四卡启动脚本 | [ds_disk_v7_latent_20261020.sh](scripts/ds_disk_v7_latent_20261020.sh) |
+| 自主推理 | [inference_v7.py](causal_diagsafe/inference_v7.py)、[infer_v7.py](causal_diagsafe/cli/infer_v7.py) |
+| 固定自然 dev 评测 | [evaluation_v7.py](causal_diagsafe/evaluation_v7.py)、[evaluate_v7.py](causal_diagsafe/cli/evaluate_v7.py) |
+| 学生 / 教师隔离环境 | [train-v7.txt](requirements/train-v7.txt)、[teacher-v7.txt](requirements/teacher-v7.txt) |
 
-部分共享实现沿用 v3/v4/v5 文件名。**v6 推理和评测必须显式传入 `--protocol v6`**，这些共用 CLI 的默认值仍是 v4。不要仅凭文件名选择协议。
+部分共享数据、分批和匹配实现沿用 v3/v4/v5 文件名。V7 使用上表中的独立 CLI，不通过旧入口的 `--protocol` 切换。诊断脚本、短程试验、旧纠错流程和运行产物不随本次主方法提交上传。公开 benchmark 的旧结果不能直接标记为 v7 结果；V7 CLI 当前提供自主推理和固定自然 dev，完整公开系统评测仍需相应模型接口。
 
 ## 历史版本
 
-[v3 方法](docs/DIAGSAFE_V3_METHOD_EXECUTION_PLAN_20261008_ZH.md)、[v3 训练设置](docs/DIAGSAFE_METHOD_EXPERIMENT_SETTINGS_20260929_ZH.md) 和 [v0 首页](docs/archive/README_V0_ZH.md) 保留用于追溯，不作为当前运行入口。
+[v6 方法](docs/DIAGSAFE_V6_GUIDE_ZH.md)、[v3 方法](docs/DIAGSAFE_V3_METHOD_EXECUTION_PLAN_20261008_ZH.md)、[v3 训练设置](docs/DIAGSAFE_METHOD_EXPERIMENT_SETTINGS_20260929_ZH.md) 和 [v0 首页](docs/archive/README_V0_ZH.md) 保留用于追溯，不作为当前运行入口。

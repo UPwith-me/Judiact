@@ -1,0 +1,8 @@
+# Install in a separate environment: vLLM resolves its matching torch/CUDA dependencies.
+# Do not combine with train-v7.txt, whose torch pin belongs to the student environment.
+vllm==0.11.0
+transformers==4.57.1
+peft==0.17.1
+xgrammar==0.2.8
+Pillow==12.3.0
+huggingface-hub==0.36.2

@@ -1,5 +1,7 @@
 # DiagSafe-VL v6 方法与运行说明
 
+本文保留 v6 的历史信息流与运行入口。当前 v7 的两阶段潜变量训练及独立推理命令见 [v7 方法与运行说明](DIAGSAFE_V7_GUIDE_ZH.md)，下文参数不作为 v7 配置。
+
 本页对应 2026-10-16 同步的正式主代码。方法协议为 `grounded_audit_v6_20261016`，证据解码版本为 `xgrammar_0_2_8_audit_v3_compact`，数据契约保持 v1。本文只说明当前实现，不收录内部机制试验和运行日志，也不将方法代码视为已验证的效果结论。
 
 [返回首页](../README.md) · [当前数据](DATA_OVERVIEW_ZH.md) · [字段定义](../data_contract/v1/README_ZH.md)
