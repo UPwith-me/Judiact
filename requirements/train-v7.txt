@@ -1,4 +1,0 @@
-# Student training, autonomous inference and natural-dev evaluation.
-# The shared pins match the existing training environment; no vLLM in this environment.
--r train-v3.txt
-xgrammar==0.2.8

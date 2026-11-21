@@ -1,9 +1,40 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
-addopts = "-q"
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.ruff]
-line-length = 100
-target-version = "py311"
+[project]
+name = "judiact-guard"
+version = "1.0.0"
+description = "Training and evaluation for the JudiAct multimodal safety guard"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "torch==2.8.0",
+    "torchvision==0.23.0",
+    "transformers==4.57.1",
+    "tokenizers==0.22.2",
+    "accelerate==1.10.1",
+    "peft==0.17.1",
+    "numpy>=1.26,<3",
+    "Pillow>=10,<13",
+    "scikit-learn>=1.7,<2",
+]
 
+[project.optional-dependencies]
+audit = ["xgrammar==0.2.6rc2"]
+rl = ["xgrammar==0.2.6rc2", "verl==0.7.0", "tensordict==0.10.0", "torchdata==0.11.0"]
+harmbench = ["datasketch>=2,<3"]
+
+[project.scripts]
+judiact-train-sft = "judiact.cli.train_sft:main"
+judiact-prepare-costs = "judiact.cli.prepare_costs:main"
+judiact-train-rl = "judiact.cli.train_rl:main"
+judiact-prepare-data = "judiact.cli.prepare_data:main"
+judiact-evaluate = "judiact.cli.evaluate:main"
+judiact-public-eval = "judiact.cli.public_eval:main"
+
+[tool.setuptools.packages.find]
+include = ["judiact*"]
+
+[tool.setuptools.package-data]
+judiact = ["public_protocol.json"]

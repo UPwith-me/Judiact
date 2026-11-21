@@ -1,97 +1,83 @@
-# DiagSafe-VL
+# JudiAct
 
-用户向多模态助手上传图片、截图或文档时，安全判断需要结合画面信息、具体请求、使用目的和适用规则。同一张敏感图片可以用于教育、防护或新闻分析，也可能被用于伤害他人；普通的对象指代和用途描述也可能在图文结合后形成风险。
+JudiAct is a four-action multimodal safety guard. It generates three short review items (source fact, condition, and rule link), then audits the original inputs and rules alongside its own reviews. This repository contains only training and evaluation code. Data, media, model weights, and upstream benchmark repositories are separate inputs.
 
-DiagSafe-VL 研究这类交互中的可诊断安全审核。系统在回答前判断请求应怎样处理，在回答后检查候选内容能否发布，并定位支持判断的视觉、文字和规则证据。我们希望模型在输入因素发生变化时，能够识别哪些判断需要改变、哪些仍然成立，同时保留正常请求的有效帮助。
+## Install
 
-当前方法版本为 **v7**，数据契约仍为 **v1**。训练读取冻结发布 `visual_refusal_fill_20261015`。本仓库提供主方法、训练、推理、自然 dev 评测和运行说明；数据、媒体、权重、内部复核记录和诊断实验单独管理。V7 采用弱监督 SFT 后接潜变量学习，完整效果仍在验证中。
+Use Python 3.11 on Linux with a CUDA-capable GPU. The training recipe uses four A800 GPUs, BF16 backbone computation, and FP32 language-attention LoRA parameters. Install the PyTorch 2.8 CUDA wheel appropriate to your driver. For the FlashAttention recipe, install `flash-attn==2.8.3.post2` against that PyTorch/CUDA build (`--no-build-isolation` when building from source).
 
-## 阅读入口
-
-| 内容 | 入口 |
-| --- | --- |
-| v7 的信息流、训练目标与限制 | [当前方法](docs/DIAGSAFE_V7_GUIDE_ZH.md#method) |
-| 数据数量、监督范围与文件布局 | [当前数据](docs/DATA_OVERVIEW_ZH.md) |
-| Sample、关系边与 S2 四角 | [数据契约 v1](data_contract/v1/README_ZH.md) |
-| 环境、自动过程参考与四卡训练 | [训练说明](docs/DIAGSAFE_V7_GUIDE_ZH.md#training) |
-| 自主推理、自然 dev 与指标口径 | [推理与评测](docs/DIAGSAFE_V7_GUIDE_ZH.md#evaluation) |
-| 正式代码与共享依赖 | [实现索引](docs/DIAGSAFE_V7_GUIDE_ZH.md#implementation) |
-
-## 方法流程
-
-v7 使用 Qwen3-VL-4B-Instruct、一份语言侧 LoRA 和原有 LM head。模型先记录有来源归属的事实 W，再结合当前规则形成诊断与规则记录 D，最后读取 D 作出处置。每个节点重新编码所声明的输入；最终动作不再读取原始图片、原文、前一调用的 KV 或隐藏状态，也不直接复制 `policy_action`。
-
-```mermaid
-flowchart TB
-    X["真实图片、query、实际 OCR、候选回答"] --> W["来源事实 W<br/>行为、对象、条件和来源引用"]
-    W --> L["规则链接 L<br/>前提、例外和未明确条件"]
-    P["当前实际 policy deck"] --> L
-    W --> S["阶段诊断<br/>请求 S1-S4、意图和 policy<br/>或回答 S5"]
-    P --> S
-    L --> S
-    W --> D["诊断与规则记录 D"]
-    L --> D
-    S --> D
-    D --> A["请求动作 / 回答可发布性<br/>allow、warn、review、refuse"]
-    A --> B["安全回答行为"]
-    D --> B
+```bash
+pip install -e '.[audit]'
+# In the Stage 2 environment:
+pip install -e '.[rl]'
 ```
 
-已有 R/E/F、意图、policy、动作、行为和定位构成观测监督。W 的事实表达与 L 的规则关联作为潜变量；训练期 32B 教师生成弱过程参考，不接收最终动作、阶段 gold 或 gold 定位，也不替换原标签。细粒度证据定位继续输出与监督，但动作之后的定位展示不被宣称为动作的因果依据。
+Use local snapshots of `Qwen/Qwen3-VL-4B-Instruct` for training and auditing. No command downloads weights or starts a service.
 
-从公开主干开始，先训练 **2 个完整 SFT epoch**，再接续 **2 个完整潜变量 epoch**。第二阶段每个成员抽取两份学生候选，并将可用的固定教师参考单独计入；根据已有观测计算后验，更新事实生成与判断过程。两阶段各自保持连续 optimizer/scheduler，每个完整 epoch 保存并运行固定自然 dev。具体公式、采样概率、关系项及局限见 [v7 方法与运行说明](docs/DIAGSAFE_V7_GUIDE_ZH.md)。
+## Train
 
-## 阶段与数据契约
+Set `MODEL` to the local base-model directory and `TRAIN_DATA` to a prepared training bundle. The loader reads train/dev only. It requires the annotated main members, auxiliary records with source-native labels, verified relations, reviewed field masks, and the frozen train-only process reference bank. See the input layout below.
 
-| 阶段 | 判断内容 |
+```bash
+torchrun --standalone --nproc-per-node=4 -m judiact.cli.train_sft \
+  --model "$MODEL" --release "$TRAIN_DATA" --output runs/sft
+
+SFT=$(python -c 'import json; print(json.load(open("runs/sft/selection.json"))["selected_checkpoint"])')
+
+torchrun --standalone --nproc-per-node=4 -m judiact.cli.prepare_costs \
+  --model "$MODEL" --adapter "$SFT" --release "$TRAIN_DATA" --output runs/costs
+
+torchrun --standalone --nproc-per-node=4 -m judiact.cli.train_rl \
+  --model "$MODEL" --checkpoint "$SFT" --release "$TRAIN_DATA" \
+  --costs runs/costs/action_costs.json --output runs/rl
+```
+
+Stage 1 selects among three complete epochs on dev using the equal mean of request and answer four-action Macro-F1. Stage 2 uses the selected weights and a fresh optimizer. Each update uses the greedy audit and two sampled replacements of one short item. The scheduled one-epoch endpoint is used without dev or test selection. Both stages accept `--resume` for full-state checkpoints; retain the original output directory and data order. Stage 2 records its endpoint in `training_result.json`.
+
+The `--release` bundle has the following paths. Prepare the bundle from your source data before running training; the public Hub viewer export is not the trainer's layout. For exact training reproduction, retain the original supervision sidecars and bank rather than regenerating or guessing missing supervision.
+
+| Path | Input |
 | --- | --- |
-| S1 | 视觉与 OCR 中的安全相关证据 |
-| S2 | 图像与 query 的对应关系及其风险影响 |
-| S3 | 请求中的使用目的、恶意或规避意图 |
-| S4 | 当前实际规则的适用性与处理要求 |
-| S5 | 候选回答是否执行或扩大风险、能否发布 |
+| `data/core_request/train.jsonl`, `data/s5_response/train.jsonl` | Main request and answer records, with `sample_id`, `group_id`, `split`, `task_type`, `model_input`, `gold`, and `source` |
+| `data/natural_request/dev.jsonl`, `data/natural_response/dev.jsonl` | Fixed natural dev views, with the same record fields |
+| `data/causal/{verified_train,noncausal_train,verified_s2_quartets_train}.jsonl` | Explicit pair and four-corner indices; only eligible relations supervise matching |
+| `data/auxiliary/{native_text_train,native_image_train}.jsonl` | Source-native auxiliary records; not projected into four actions |
+| `reviews/{supervision,projection,conditions,historical_conditions}.jsonl` | Field masks, rule-revision applicability and observed condition references |
+| `reviews/{confirmed_core_image_aliases,confirmed_image_root_families}.jsonl` | Image family information for source-root grouping |
+| `process_references/bank.rank0.jsonl` | Reference bank with `sample_id`, `source_identity`, `policy_identity`, and `candidate`; `--bank` overrides the path |
 
-R 表示正确审核是否需要该阶段能力，E 表示当前可见证据状态，F 表示该阶段定义的风险条件。三项独立标注。请求任务提供完整 S1-S4 R/E/F；回答任务提供 S5，候选存在决定 R5=1。
+Image paths in a prepared training bundle must resolve on the training machine. The reader accepts canonical review filenames or an unambiguous corresponding filename in the original bundle.
 
-[Sample schema](data_contract/v1/sample.schema.json) 记录具体输入和标签，[Causal edge schema](data_contract/v1/causal_edge.schema.json) 记录核实的输入变化及成员关系。S2 使用真实图片与自然 query 的完整四角，规则边界变化、规则不变性和回答执行差异分别建设。
+## Evaluate JudiBench
 
-模型提示只读取 `model_input`。普通带图输入保持人工 OCR 与 caption 在提示之外，OCR-only 保留自然 query 和实际转写。来源、组号、构组目标和复核历史保存在数据侧。
+Use a local [JudiBench](https://huggingface.co/datasets/Devin6666/JudiBench) snapshot containing its JSONL and referenced media. Access is governed by the dataset owner. Set `ADAPTER` to a trained checkpoint directory.
 
-## 当前数据
+```bash
+judiact-prepare-data --snapshot "$JUDIBENCH" --output data/judibench
+torchrun --standalone --nproc-per-node=4 -m judiact.cli.evaluate \
+  --model "$MODEL" --adapter "$ADAPTER" --release data/judibench \
+  --output runs/judibench --include-mechanism
+```
 
-以下为 v7 继续使用的冻结 train 清单。带图成员数与独立视觉情境数分别解释；自动生成的 W/L 参考不增加根情境数。
+`summary.json` reports four-action Macro-F1 on the natural request and answer views, fixed three-class diagnostic Macro-F1, and (when requested) exact pair and quartet scores. Withheld gold is not scored. An unparseable prediction is not silently removed, and an uncertain model output is not turned into a binary corner for an interaction score. Localization is separate from the action decision.
 
-| 数据对象 | 数量 |
-| --- | --- |
-| Core 归并请求根 | 3866 |
-| Core 请求成员 | 7917，其中带图 5883 |
-| S5 候选回答 | 3907，其中带图 2452 |
-| S5 完全相同可见请求上下文 | 2042 |
-| 原生辅助来源根 | 36188，提供 59748 个监督项 |
-| 纳入训练的关系边 | 2784 |
-| S2 完整四角索引 | 317：222 个非零、67 个零交互对照、28 个含不确定角 |
-| 自然 dev | 请求 299 条，回答审核 200 条 |
+## Evaluate public benchmarks
 
-根、成员、回答、组和边不混计。关系集合包含控制与不变性任务，不能把 2784 条边当作同样数量的独立因果组。已知定位冲突在训练投影中按字段屏蔽，原标签和复核历史保留；全量人工终审尚未认证。详见 [数据说明](docs/DATA_OVERVIEW_ZH.md)。
+`judiact-public-eval` runs on caller-provided normalized benchmark manifests and trusted upstream rubric checkouts. The manifest directory has one JSONL per task, named as in [`public_protocol.json`](judiact/public_protocol.json). Each row supplies `sample_id`, `root_id`, `audit_target`, `native_harm`, `subset`, `category`, and `modality`; `visible_json` encodes `query`, `images`, `ocr_text`, `policy_deck`, and `response_candidate`. Images can use paths relative to the manifest. `provenance_json` carries source-only rubric inputs where required (e.g., the SIUO references). It is not shown to the answerer or guard. Keep source variants and rubric metadata unchanged when preparing these records.
 
-## 主要代码
+```bash
+judiact-public-eval prepare --inputs "$INPUTS" --output runs/public
+judiact-public-eval generate --model "$MODEL" --output runs/public
+judiact-public-eval guard --model "$MODEL" --adapter "$ADAPTER" --output runs/public
+judiact-public-eval assemble --output runs/public
+judiact-public-eval controlled --model "$MODEL" --output runs/public
+judiact-public-eval materialize --output runs/public
+judiact-public-eval translate --judge-model "$JUDGE" --output runs/public  # for SORRY-Bench
+judiact-public-eval judge --judge-model "$JUDGE" --references "$REFERENCES" \
+  --harmbench-classifier "$HARMBENCH_JUDGE" --output runs/public
+judiact-public-eval score --output runs/public
+```
 
-| 内容 | 入口 |
-| --- | --- |
-| 完整 Qwen 与 LoRA | [diagsafe_v3.py](causal_diagsafe/models/diagsafe_v3.py) |
-| 来源、规则、诊断与动作接口 | [audit_v7.py](causal_diagsafe/audit_v7.py) |
-| 自动过程参考 | [build_v7_latent_bank.py](causal_diagsafe/cli/build_v7_latent_bank.py) |
-| 现有标签、根权重与候选视图 | [v7_latent_data.py](causal_diagsafe/training/v7_latent_data.py) |
-| 后验权重与潜变量梯度 | [v7_latent_objective.py](causal_diagsafe/training/v7_latent_objective.py) |
-| 序列概率、XGrammar 与真实采样概率 | [v7_sequence.py](causal_diagsafe/training/v7_sequence.py) |
-| 两阶段训练与组内关系 | [v7_latent_trainer.py](causal_diagsafe/training/v7_latent_trainer.py)、[train_v7_latent.py](causal_diagsafe/cli/train_v7_latent.py) |
-| 正式四卡启动脚本 | [ds_disk_v7_latent_20261020.sh](scripts/ds_disk_v7_latent_20261020.sh) |
-| 自主推理 | [inference_v7.py](causal_diagsafe/inference_v7.py)、[infer_v7.py](causal_diagsafe/cli/infer_v7.py) |
-| 固定自然 dev 评测 | [evaluation_v7.py](causal_diagsafe/evaluation_v7.py)、[evaluate_v7.py](causal_diagsafe/cli/evaluate_v7.py) |
-| 学生 / 教师隔离环境 | [train-v7.txt](requirements/train-v7.txt)、[teacher-v7.txt](requirements/teacher-v7.txt) |
+`JUDGE` is a local `Qwen/Qwen3-VL-32B-Instruct` snapshot. `REFERENCES` contains the upstream rubric checkouts under the directory names read by `benchmark_official.py` and `harmbench.py`. For the official HarmBench classifier and copyright matching, install `.[harmbench]` and supply the released classifier and reference hashes. The optional `--backend vllm` is for greedy judge/translation runs in a separate compatible vLLM environment; it is not used for sampled answer generation. Inference steps support `--rank`/`--world-size` sharding. Use a distinct `--name` for every adapter compared in one run.
 
-部分共享数据、分批和匹配实现沿用 v3/v4/v5 文件名。V7 使用上表中的独立 CLI，不通过旧入口的 `--protocol` 切换。诊断脚本、短程试验、旧纠错流程和运行产物不随本次主方法提交上传。公开 benchmark 的旧结果不能直接标记为 v7 结果；V7 CLI 当前提供自主推理和固定自然 dev，完整公开系统评测仍需相应模型接口。
-
-## 历史版本
-
-[v6 方法](docs/DIAGSAFE_V6_GUIDE_ZH.md)、[v3 方法](docs/DIAGSAFE_V3_METHOD_EXECUTION_PLAN_20261008_ZH.md)、[v3 训练设置](docs/DIAGSAFE_METHOD_EXPERIMENT_SETTINGS_20260929_ZH.md) 和 [v0 首页](docs/archive/README_V0_ZH.md) 保留用于追溯，不作为当前运行入口。
+The systems share one unguarded answer pool; Post audits actual candidates. A Post `warn` requests one revision, and the delivered response is judged rather than assumed safe. `score` uses benchmark-specific aggregations and records unresolved judgments separately. For native binary manifests, run `guard --phases native` and `score-native`; the fixed four-action projection is distinct from the trained binary auxiliary interface (`--native-harm`).
