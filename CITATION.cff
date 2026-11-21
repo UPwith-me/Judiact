@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use JudiAct, please cite the accompanying paper."
+title: JudiAct
+type: software
+version: 1.0.0
+license: Apache-2.0
+repository-code: https://github.com/UPwith-me/Judiact
+authors: &authors
+  - given-names: Jipei
+    family-names: He
+  - given-names: Cheng
+    family-names: Cheng
+  - given-names: Liuguo
+    family-names: Wang
+  - given-names: Zihan
+    family-names: Wen
+  - given-names: Changlin
+    family-names: Yu
+  - given-names: Wentao
+    family-names: Song
+  - given-names: Suyun
+    family-names: Zhao
+preferred-citation:
+  type: unpublished
+  title: "Guarding with Judgment: Learning to Intervene for Multimodal Safety"
+  authors: *authors

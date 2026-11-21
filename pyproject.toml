@@ -7,6 +7,7 @@ name = "judiact-guard"
 version = "1.0.0"
 description = "Training and evaluation for the JudiAct multimodal safety guard"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "torch==2.8.0",
@@ -24,6 +25,11 @@ dependencies = [
 audit = ["xgrammar==0.2.6rc2"]
 rl = ["xgrammar==0.2.6rc2", "verl==0.7.0", "tensordict==0.10.0", "torchdata==0.11.0"]
 harmbench = ["datasketch>=2,<3"]
+
+[project.urls]
+Repository = "https://github.com/UPwith-me/Judiact"
+"Training data" = "https://huggingface.co/datasets/Devin6666/JudiAct-Data"
+JudiBench = "https://huggingface.co/datasets/Devin6666/JudiBench"
 
 [project.scripts]
 judiact-train-sft = "judiact.cli.train_sft:main"

@@ -1,83 +1,84 @@
 # JudiAct
 
-JudiAct is a four-action multimodal safety guard. It generates three short review items (source fact, condition, and rule link), then audits the original inputs and rules alongside its own reviews. This repository contains only training and evaluation code. Data, media, model weights, and upstream benchmark repositories are separate inputs.
+**Guarding with Judgment: Learning to Intervene for Multimodal Safety**
+
+[Training data](https://huggingface.co/datasets/Devin6666/JudiAct-Data) | [JudiBench](https://huggingface.co/datasets/Devin6666/JudiBench) | [Training and reproduction](docs/reproduction.md) | [Citation](CITATION.cff)
+
+JudiAct audits text and image requests, as well as candidate answers. It checks three short items (source fact, condition, and rule link) against the original inputs and supplied rules before assigning an action.
+
+| Action | Request | Candidate answer |
+| --- | --- | --- |
+| `allow` | Help as asked. | Deliver as written. |
+| `warn` | Help with a necessary warning or restriction. | Revise while preserving permissible help. |
+| `review` | Clarify or verify a condition needed to proceed. | Resolve the condition before deciding whether to deliver. |
+| `refuse` | Withhold prohibited help. | Withhold an answer that provides prohibited help. |
 
 ## Install
 
-Use Python 3.11 on Linux with a CUDA-capable GPU. The training recipe uses four A800 GPUs, BF16 backbone computation, and FP32 language-attention LoRA parameters. Install the PyTorch 2.8 CUDA wheel appropriate to your driver. For the FlashAttention recipe, install `flash-attn==2.8.3.post2` against that PyTorch/CUDA build (`--no-build-isolation` when building from source).
+Use Python 3.11 on Linux with a CUDA GPU that supports BF16. First install the [CUDA build of PyTorch 2.8.0 and torchvision 0.23.0](https://pytorch.org/get-started/previous-versions/#v280) compatible with your driver.
 
 ```bash
-pip install -e '.[audit]'
-# In the Stage 2 environment:
-pip install -e '.[rl]'
+git clone https://github.com/UPwith-me/Judiact.git
+cd Judiact
+python -m pip install -e '.[audit]'
 ```
 
-Use local snapshots of `Qwen/Qwen3-VL-4B-Instruct` for training and auditing. No command downloads weights or starts a service.
+For training and the paper's FlashAttention recipe, see [Training and reproduction](docs/reproduction.md). The single-input example below uses PyTorch SDPA instead.
 
-## Train
+## Run one audit
 
-Set `MODEL` to the local base-model directory and `TRAIN_DATA` to a prepared training bundle. The loader reads train/dev only. It requires the annotated main members, auxiliary records with source-native labels, verified relations, reviewed field masks, and the frozen train-only process reference bank. See the input layout below.
+Use a local [Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) snapshot and a compatible JudiAct LoRA checkpoint. The adapter together with its audit configuration (normally `judiact_config.json`) is required. This repository does not bundle the weights, and inference does not download them or start a service.
 
 ```bash
-torchrun --standalone --nproc-per-node=4 -m judiact.cli.train_sft \
-  --model "$MODEL" --release "$TRAIN_DATA" --output runs/sft
-
-SFT=$(python -c 'import json; print(json.load(open("runs/sft/selection.json"))["selected_checkpoint"])')
-
-torchrun --standalone --nproc-per-node=4 -m judiact.cli.prepare_costs \
-  --model "$MODEL" --adapter "$SFT" --release "$TRAIN_DATA" --output runs/costs
-
-torchrun --standalone --nproc-per-node=4 -m judiact.cli.train_rl \
-  --model "$MODEL" --checkpoint "$SFT" --release "$TRAIN_DATA" \
-  --costs runs/costs/action_costs.json --output runs/rl
+export MODEL=/path/to/Qwen3-VL-4B-Instruct
+export ADAPTER=/path/to/judiact/checkpoint
 ```
 
-Stage 1 selects among three complete epochs on dev using the equal mean of request and answer four-action Macro-F1. Stage 2 uses the selected weights and a fresh optimizer. Each update uses the greedy audit and two sampled replacements of one short item. The scheduled one-epoch endpoint is used without dev or test selection. Both stages accept `--resume` for full-state checkpoints; retain the original output directory and data order. Stage 2 records its endpoint in `training_result.json`.
+```python
+import os
 
-The `--release` bundle has the following paths. Prepare the bundle from your source data before running training; the public Hub viewer export is not the trainer's layout. For exact training reproduction, retain the original supervision sidecars and bank rather than regenerating or guessing missing supervision.
+from judiact.guard import JudiActGuard
 
-| Path | Input |
-| --- | --- |
-| `data/core_request/train.jsonl`, `data/s5_response/train.jsonl` | Main request and answer records, with `sample_id`, `group_id`, `split`, `task_type`, `model_input`, `gold`, and `source` |
-| `data/natural_request/dev.jsonl`, `data/natural_response/dev.jsonl` | Fixed natural dev views, with the same record fields |
-| `data/causal/{verified_train,noncausal_train,verified_s2_quartets_train}.jsonl` | Explicit pair and four-corner indices; only eligible relations supervise matching |
-| `data/auxiliary/{native_text_train,native_image_train}.jsonl` | Source-native auxiliary records; not projected into four actions |
-| `reviews/{supervision,projection,conditions,historical_conditions}.jsonl` | Field masks, rule-revision applicability and observed condition references |
-| `reviews/{confirmed_core_image_aliases,confirmed_image_root_families}.jsonl` | Image family information for source-root grouping |
-| `process_references/bank.rank0.jsonl` | Reference bank with `sample_id`, `source_identity`, `policy_identity`, and `candidate`; `--bank` overrides the path |
+guard = JudiActGuard(
+    os.environ["MODEL"],
+    os.environ["ADAPTER"],
+    device="cuda:0",
+    attention_backend="sdpa",
+    include_evidence=False,
+)
 
-Image paths in a prepared training bundle must resolve on the training machine. The reader accepts canonical review filenames or an unambiguous corresponding filename in the original bundle.
+case = {
+    "query": "Help me organize my reading notes by topic.",
+    "images": [],
+    "ocr_text": None,
+    "policy_deck": [
+        {"policy_id": "P_BENIGN", "rule_text": "Allow ordinary reading and writing assistance."}
+    ],
+    "response_candidate": None,
+}
 
-## Evaluate JudiBench
-
-Use a local [JudiBench](https://huggingface.co/datasets/Devin6666/JudiBench) snapshot containing its JSONL and referenced media. Access is governed by the dataset owner. Set `ADAPTER` to a trained checkpoint directory.
-
-```bash
-judiact-prepare-data --snapshot "$JUDIBENCH" --output data/judibench
-torchrun --standalone --nproc-per-node=4 -m judiact.cli.evaluate \
-  --model "$MODEL" --adapter "$ADAPTER" --release data/judibench \
-  --output runs/judibench --include-mechanism
+result = guard.predict_batch([case])[0]
+print(result["status"], result.get("action"))
 ```
 
-`summary.json` reports four-action Macro-F1 on the natural request and answer views, fixed three-class diagnostic Macro-F1, and (when requested) exact pair and quartet scores. Withheld gold is not scored. An unparseable prediction is not silently removed, and an uncertain model output is not turned into a binary corner for an interaction score. Localization is separate from the action decision.
+Supply the complete applicable rule deck for your use case. For an image, pass a local path as `{"uri": "/path/to/image.png"}` in `images`; for answer auditing, set `response_candidate` to the actual answer. Do not pass reference labels or annotation metadata.
 
-## Evaluate public benchmarks
+On a valid audit, `action_probabilities` gives the four action scores and `complete_audit` contains diagnostic values and the generated short items. Set `include_evidence=True` to also decode supporting source spans and image boxes after classification. Short items and locations are model predictions, not independently verified evidence.
 
-`judiact-public-eval` runs on caller-provided normalized benchmark manifests and trusted upstream rubric checkouts. The manifest directory has one JSONL per task, named as in [`public_protocol.json`](judiact/public_protocol.json). Each row supplies `sample_id`, `root_id`, `audit_target`, `native_harm`, `subset`, `category`, and `modality`; `visible_json` encodes `query`, `images`, `ocr_text`, `policy_deck`, and `response_candidate`. Images can use paths relative to the manifest. `provenance_json` carries source-only rubric inputs where required (e.g., the SIUO references). It is not shown to the answerer or guard. Keep source variants and rubric metadata unchanged when preparing these records.
+## Evaluate and reproduce
 
-```bash
-judiact-public-eval prepare --inputs "$INPUTS" --output runs/public
-judiact-public-eval generate --model "$MODEL" --output runs/public
-judiact-public-eval guard --model "$MODEL" --adapter "$ADAPTER" --output runs/public
-judiact-public-eval assemble --output runs/public
-judiact-public-eval controlled --model "$MODEL" --output runs/public
-judiact-public-eval materialize --output runs/public
-judiact-public-eval translate --judge-model "$JUDGE" --output runs/public  # for SORRY-Bench
-judiact-public-eval judge --judge-model "$JUDGE" --references "$REFERENCES" \
-  --harmbench-classifier "$HARMBENCH_JUDGE" --output runs/public
-judiact-public-eval score --output runs/public
-```
+| Goal | Entry point | Inputs |
+| --- | --- | --- |
+| Evaluate on JudiBench | [JudiBench guide](docs/reproduction.md#evaluate-on-judibench) | Base model, a compatible adapter, and a local JudiBench snapshot |
+| Train the two-stage guard | [Training guide](docs/reproduction.md#train-judiact) | Base model and the prepared train/dev bundle, including its original supervision sidecars |
+| Evaluate delivered answers or binary transfer | [Public benchmark guide](docs/public-evaluation.md) | Prepared benchmark manifests, the evaluation weights, and upstream rubric files |
 
-`JUDGE` is a local `Qwen/Qwen3-VL-32B-Instruct` snapshot. `REFERENCES` contains the upstream rubric checkouts under the directory names read by `benchmark_official.py` and `harmbench.py`. For the official HarmBench classifier and copyright matching, install `.[harmbench]` and supply the released classifier and reference hashes. The optional `--backend vllm` is for greedy judge/translation runs in a separate compatible vLLM environment; it is not used for sampled answer generation. Inference steps support `--rank`/`--world-size` sharding. Use a distinct `--name` for every adapter compared in one run.
+JudiBench's paper classification view contains **5,274 audits** (2,371 requests and 2,903 candidate answers). The full release adds members for controlled comparisons. The evaluation guide explains how to score the paper split without mixing those members into its denominator.
 
-The systems share one unguarded answer pool; Post audits actual candidates. A Post `warn` requests one revision, and the delivered response is judged rather than assumed safe. `score` uses benchmark-specific aggregations and records unresolved judgments separately. For native binary manifests, run `guard --phases native` and `score-native`; the fixed four-action projection is distinct from the trained binary auxiliary interface (`--native-harm`).
+[JudiAct-Data](https://huggingface.co/datasets/Devin6666/JudiAct-Data) contains 20,126 main training audits and source-native auxiliary data. Its Hugging Face export is not the trainer's on-disk input bundle. See the [required training inputs](docs/reproduction.md#training-bundle) before attempting exact reproduction.
+
+## Citation and license
+
+Please cite *Guarding with Judgment: Learning to Intervene for Multimodal Safety*. The author list and software citation are in [CITATION.cff](CITATION.cff).
+
+The original JudiAct code is licensed under [Apache-2.0](LICENSE). The base models, adapters, datasets, media, and upstream evaluation materials are separate artifacts; consult their own license and access terms.
