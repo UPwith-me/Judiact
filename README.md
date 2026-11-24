@@ -2,7 +2,7 @@
 
 **Guarding with Judgment: Learning to Intervene for Multimodal Safety**
 
-[Training data](https://huggingface.co/datasets/Devin6666/JudiAct-Data) | [JudiBench](https://huggingface.co/datasets/Devin6666/JudiBench) | [Training and reproduction](docs/reproduction.md) | [Citation](CITATION.cff)
+[Paper](https://arxiv.org/abs/2611.28849) | [Training data](https://huggingface.co/datasets/Devin6666/JudiAct-Data) | [JudiBench](https://huggingface.co/datasets/Devin6666/JudiBench) | [Training and reproduction](docs/reproduction.md) | [Citation](#citation)
 
 JudiAct audits text and image requests, as well as candidate answers. It checks three short items (source fact, condition, and rule link) against the original inputs and supplied rules before assigning an action.
 
@@ -77,8 +77,24 @@ JudiBench's paper classification view contains **5,274 audits** (2,371 requests 
 
 [JudiAct-Data](https://huggingface.co/datasets/Devin6666/JudiAct-Data) contains 20,126 main training audits and source-native auxiliary data. Its Hugging Face export is not the trainer's on-disk input bundle. See the [required training inputs](docs/reproduction.md#training-bundle) before attempting exact reproduction.
 
-## Citation and license
+## Citation
 
-Please cite *Guarding with Judgment: Learning to Intervene for Multimodal Safety*. The author list and software citation are in [CITATION.cff](CITATION.cff).
+If you use JudiAct, please cite the [arXiv preprint](https://arxiv.org/abs/2611.28849):
+
+```bibtex
+@misc{he2026guardingjudgmentlearningintervene,
+  title         = {Guarding with Judgment: Learning to Intervene for Multimodal Safety},
+  author        = {Jipei He and Cheng Cheng and Liuguo Wang and Zihan Wen and Changlin Yu and Wentao Song and Suyun Zhao},
+  year          = {2026},
+  eprint        = {2611.28849},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.28849},
+}
+```
+
+The machine-readable citation is in [CITATION.cff](CITATION.cff).
+
+## License
 
 The original JudiAct code is licensed under [Apache-2.0](LICENSE). The base models, adapters, datasets, media, and upstream evaluation materials are separate artifacts; consult their own license and access terms.

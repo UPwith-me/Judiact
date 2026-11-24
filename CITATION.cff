@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use JudiAct, please cite the accompanying paper."
+message: "If you use JudiAct, please cite the arXiv preprint."
 title: JudiAct
 type: software
 version: 1.0.0
@@ -21,6 +21,13 @@ authors: &authors
   - given-names: Suyun
     family-names: Zhao
 preferred-citation:
-  type: unpublished
+  type: article
   title: "Guarding with Judgment: Learning to Intervene for Multimodal Safety"
   authors: *authors
+  journal: "arXiv preprint arXiv:2611.28849"
+  year: 2026
+  url: https://arxiv.org/abs/2611.28849
+  identifiers:
+    - type: other
+      value: "arXiv:2611.28849"
+      description: arXiv preprint identifier

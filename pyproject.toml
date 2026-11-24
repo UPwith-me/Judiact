@@ -28,6 +28,7 @@ harmbench = ["datasketch>=2,<3"]
 
 [project.urls]
 Repository = "https://github.com/UPwith-me/Judiact"
+Paper = "https://arxiv.org/abs/2611.28849"
 "Training data" = "https://huggingface.co/datasets/Devin6666/JudiAct-Data"
 JudiBench = "https://huggingface.co/datasets/Devin6666/JudiBench"
 
